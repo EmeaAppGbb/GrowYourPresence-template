@@ -1,0 +1,54 @@
+name: "🔄 Session State & Dashboard Update"
+description: Request a session submission state update and dashboard sync
+title: "🔄 Session State Update: "
+labels: ["session-state-update", "session-submission", "pending-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Session State & Dashboard Update
+        Use this issue type when a session state must be updated and reflected on the README dashboard.
+
+  - type: input
+    id: session-title
+    attributes:
+      label: Session Title
+      description: Session name as shown in the submission file
+    validations:
+      required: true
+
+  - type: input
+    id: event-name
+    attributes:
+      label: Target Event
+      description: Event for this submission
+    validations:
+      required: true
+
+  - type: input
+    id: submission-file
+    attributes:
+      label: Submission File
+      description: Path to the submission markdown file
+      placeholder: "submissions/2026/event-slug/session-1.md"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target-state
+    attributes:
+      label: Target State
+      description: Select the state that should be reflected in frontmatter + dashboard
+      options:
+        - ready
+        - submitted
+        - accepted
+        - rejected
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Optional context (decision, result email, reviewer notes)

@@ -1,0 +1,53 @@
+name: "🏷️ Sync Labels"
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/sync-labels.yml'
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              { name: 'event-discovery', color: '0E8A16', description: 'Event discovery tasks and PRs' },
+              { name: 'submission-compose', color: 'D4C5F9', description: 'Submission composition tasks' },
+              { name: 'submission-proposal', color: 'BFD4F2', description: 'Submission proposal PRs' },
+              { name: 'session-submission', color: '1D76DB', description: 'Session submission tracking issues' },
+              { name: 'session-state-update', color: '5319E7', description: 'Session status/dashboard update requests' },
+              { name: 'copilot', color: '6f42c1', description: 'Assigned to Copilot coding agent' },
+              { name: 'pending-submission', color: 'FBCA04', description: 'Ready to submit to CFP' },
+              { name: 'submitted', color: '0052CC', description: 'Submitted to event CFP' },
+              { name: 'accepted', color: '0E8A16', description: 'Session accepted by event' },
+              { name: 'rejected', color: 'B60205', description: 'Rejected or not interested' },
+              { name: 'archived', color: 'EEEEEE', description: 'Archived by cleanup' },
+            ];
+            
+            for (const label of labels) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label
+                });
+                core.info(`Created label: ${label.name}`);
+              } catch (e) {
+                if (e.status === 422) {
+                  await github.rest.issues.updateLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ...label
+                  });
+                  core.info(`Updated label: ${label.name}`);
+                } else {
+                  core.warning(`Failed: ${label.name} — ${e.message}`);
+                }
+              }
+            }

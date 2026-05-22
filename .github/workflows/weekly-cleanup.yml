@@ -1,0 +1,114 @@
+name: "🧹 Weekly Cleanup"
+
+on:
+  schedule:
+    # Every Monday at 8:00 AM UTC
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: write
+
+concurrency:
+  group: dashboard-update
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Archive rejected submissions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Find all session-submission issues with 'rejected' label
+            const { data: rejectedIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'session-submission,rejected',
+              state: 'open',
+              per_page: 100
+            });
+
+            for (const issue of rejectedIssues) {
+              // Close the issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                labels: [...issue.labels.map(l => l.name), 'archived']
+              });
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '🗄️ Archived by weekly cleanup. This rejected submission has been archived.'
+              });
+
+              core.info(`Archived rejected issue #${issue.number}`);
+            }
+
+            core.setOutput('archived_count', rejectedIssues.length);
+
+      - name: Update frontmatter for archived items
+        run: |
+          # Find event files with status: rejected and update to archived
+          find events/ -name "*.md" -not -name "_template.md" | while read file; do
+            if grep -q "^status: rejected" "$file"; then
+              sed -i "s/^status: rejected/status: archived/" "$file"
+              echo "Archived: $file"
+            fi
+          done
+
+          # Find submission files with status: rejected and update to archived
+          find submissions/ -name "*.md" -not -name "_template.md" | while read file; do
+            if grep -q "^status: rejected" "$file"; then
+              sed -i "s/^status: rejected/status: archived/" "$file"
+              echo "Archived: $file"
+            fi
+          done
+
+      - name: Check for events past CFP deadline
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          find events/ -name "*.md" -not -name "_template.md" | while read file; do
+            CFP_DEADLINE=$(grep "^cfp_deadline:" "$file" | sed 's/cfp_deadline:\s*["'"'"']*\([0-9-]*\).*/\1/')
+            STATUS=$(grep "^status:" "$file" | sed 's/status:\s*//')
+            if [ -n "$CFP_DEADLINE" ] && [ "$CFP_DEADLINE" != '""' ] && [ "$CFP_DEADLINE" \< "$TODAY" ]; then
+              if [ "$STATUS" = "discovered" ] || [ "$STATUS" = "shortlisted" ]; then
+                sed -i "s/^status: $STATUS/status: closed/" "$file"
+                sed -i "s/^cfp_status: open/cfp_status: closed/" "$file"
+                echo "Closed (CFP expired): $file"
+              fi
+            fi
+          done
+
+      - name: Generate dashboard
+        run: node scripts/generate-readme.js
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No cleanup changes"
+          else
+            git commit -m "🧹 Weekly cleanup: archive rejected items, close expired CFPs"
+            git push
+          fi

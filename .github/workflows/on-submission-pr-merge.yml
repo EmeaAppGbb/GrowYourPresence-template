@@ -1,0 +1,128 @@
+name: "📝 Submission PR Merged → Create Tracking Issue"
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  contents: write
+  pull-requests: read
+
+jobs:
+  create-tracking-issue:
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'submission-proposal')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find submission files in PR
+        id: find-submissions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100
+            });
+
+            const subFiles = files
+              .filter(f => f.filename.startsWith('submissions/') && f.filename.endsWith('.md') && !f.filename.includes('_template'))
+              .map(f => f.filename);
+
+            core.setOutput('submission_files', JSON.stringify(subFiles));
+            core.setOutput('count', subFiles.length);
+
+      - name: Create tracking issues
+        if: steps.find-submissions.outputs.count > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const subFiles = JSON.parse('${{ steps.find-submissions.outputs.submission_files }}');
+
+            for (const subFile of subFiles) {
+              const content = fs.readFileSync(subFile, 'utf-8');
+
+              const titleMatch = content.match(/session_title:\s*["']?(.+?)["']?\s*$/m);
+              const sessionTitle = titleMatch ? titleMatch[1] : subFile.split('/').pop().replace('.md', '');
+
+              const eventMatch = content.match(/event_id:\s*["']?(.+?)["']?\s*$/m);
+              const eventId = eventMatch ? eventMatch[1] : 'unknown';
+
+              const { data: issue } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🎯 Session Submission: ${sessionTitle}`,
+                labels: ['session-submission', 'pending-submission'],
+                body: [
+                  '## 🎯 Session Submission Tracker',
+                  '',
+                  `**Session:** ${sessionTitle}`,
+                  `**Event:** ${eventId}`,
+                  `**Submission File:** \`${subFile}\``,
+                  `**Source PR:** #${context.payload.pull_request.number}`,
+                  '',
+                  '### Lifecycle',
+                  '',
+                  'Manage this submission by changing labels:',
+                  '',
+                  '| Action | Label Change |',
+                  '|--------|-------------|',
+                  '| Mark as submitted | Remove `pending-submission`, add `submitted` |',
+                  '| Mark as accepted | Remove `submitted`, add `accepted` |',
+                  '| Mark as rejected | Remove `submitted`, add `rejected` |',
+                  '',
+                  'Each label change will automatically update the README dashboard.',
+                  '',
+                  '### Current Status: ⏳ Pending Submission',
+                  '',
+                  'The session proposal is ready. Submit it through the event\'s CFP platform,',
+                  'then update the label to `submitted`.',
+                  '',
+                  '---',
+                  '*Auto-created when the submission PR was merged.*'
+                ].join('\n')
+              });
+
+              core.info(`Created tracking issue #${issue.number} for ${sessionTitle}`);
+            }
+
+      - name: Update submission frontmatter to ready
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const subFiles = JSON.parse('${{ steps.find-submissions.outputs.submission_files }}');
+
+            for (const subFile of subFiles) {
+              let content = fs.readFileSync(subFile, 'utf-8');
+              content = content.replace(/status:\s*draft/, 'status: ready');
+              content = content.replace(/status:\s*review/, 'status: ready');
+              fs.writeFileSync(subFile, content);
+            }
+
+      - name: Commit frontmatter updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add submissions/
+          if git diff --cached --quiet; then
+            echo "No frontmatter changes"
+          else
+            git commit -m "📋 Update submission status to ready"
+            git push
+          fi
+
+  update-dashboard:
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'submission-proposal')
+    needs: create-tracking-issue
+    uses: ./.github/workflows/update-dashboard.yml
+    with:
+      commit_message: "📊 Update dashboard: submissions ready from PR #${{ github.event.pull_request.number }}"

@@ -1,0 +1,57 @@
+name: "🎯 Session Submission"
+description: Track a session submission through the CFP lifecycle
+title: "🎯 Session Submission: "
+labels: ["session-submission", "pending-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Session Submission Tracker
+        Track this session through the submission lifecycle by changing labels.
+
+  - type: input
+    id: session-title
+    attributes:
+      label: Session Title
+      description: Title of the session being submitted
+    validations:
+      required: true
+
+  - type: input
+    id: event-name
+    attributes:
+      label: Target Event
+      description: Which event is this submission for?
+    validations:
+      required: true
+
+  - type: input
+    id: submission-file
+    attributes:
+      label: Submission File
+      description: Path to the submission markdown file
+      placeholder: "submissions/2026/event-slug/session-1.md"
+    validations:
+      required: true
+
+  - type: input
+    id: cfp-deadline
+    attributes:
+      label: CFP Deadline
+      description: When does the CFP close?
+      placeholder: "YYYY-MM-DD"
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Lifecycle Management
+
+        Change labels to update the submission state:
+
+        | Current State | Action | New Label |
+        |--------------|--------|-----------|
+        | `pending-submission` | Submitted to CFP | `submitted` |
+        | `submitted` | Session accepted! | `accepted` |
+        | `submitted` | Session rejected | `rejected` |
+
+        Each label change automatically updates the README dashboard.

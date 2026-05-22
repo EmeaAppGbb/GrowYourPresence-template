@@ -1,0 +1,17 @@
+# Copilot Coding Agent Environment Setup
+# This configures the environment for the Copilot coding agent when it runs on GitHub Actions.
+
+steps:
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: '20'
+
+  - name: Install Playwright
+    run: |
+      npx playwright install --with-deps chromium
+
+  - name: Install dependencies
+    run: |
+      npm install -g @anthropic-ai/fetch-mcp-server || true
+      npm install -g @playwright/mcp@latest || true

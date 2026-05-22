@@ -1,0 +1,113 @@
+name: "🎤 Event PR Merged → Compose Submissions"
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  contents: write
+  pull-requests: read
+
+jobs:
+  compose-submissions:
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'event-discovery')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find new event files in PR
+        id: find-events
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100
+            });
+
+            const eventFiles = files
+              .filter(f => f.filename.startsWith('events/') && f.filename.endsWith('.md') && !f.filename.includes('_template'))
+              .map(f => f.filename);
+
+            core.setOutput('event_files', JSON.stringify(eventFiles));
+            core.setOutput('count', eventFiles.length);
+            core.info(`Found ${eventFiles.length} event files: ${eventFiles.join(', ')}`);
+
+      - name: Create submission issues for each event
+        if: steps.find-events.outputs.count > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const eventFiles = JSON.parse('${{ steps.find-events.outputs.event_files }}');
+
+            for (const eventFile of eventFiles) {
+              const content = fs.readFileSync(eventFile, 'utf-8');
+
+              // Extract event name from frontmatter
+              const nameMatch = content.match(/event_name:\s*["']?(.+?)["']?\s*$/m);
+              const eventName = nameMatch ? nameMatch[1] : eventFile.split('/').pop().replace('.md', '');
+
+              const idMatch = content.match(/event_id:\s*["']?(.+?)["']?\s*$/m);
+              const eventId = idMatch ? idMatch[1] : 'unknown';
+
+              const { data: issue } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `📝 Compose Submissions: ${eventName}`,
+                labels: ['submission-compose'],
+                body: [
+                  '## 📝 Submission Composition Task',
+                  '',
+                  `**Event:** ${eventName}`,
+                  `**Event File:** \`${eventFile}\``,
+                  `**Triggered by:** PR #${context.payload.pull_request.number}`,
+                  '',
+                  '### Instructions',
+                  '',
+                  'Compose session submission proposals for this event.',
+                  '',
+                  '**Run locally via Copilot CLI:**',
+                  '```',
+                  `Invoke the Submission Composer Agent: "Compose submissions for ${eventFile}"`,
+                  '```',
+                  '',
+                  'Or follow `.github/agents/submission-composer.md` manually.',
+                  '',
+                  '**Steps:**',
+                  `1. Read the event file at \`${eventFile}\` for event details and CFP requirements`,
+                  '2. Read `config/speaker-profile.md` for speaker topics and expertise',
+                  '3. Read `config/submission-defaults.md` for session format preferences',
+                  '4. Visit the event CFP page to understand required submission fields',
+                  '5. Create 1-3 session proposals in `submissions/{year}/{event-slug}/`',
+                  `6. Update the event file frontmatter: set \`status: drafting\``,
+                  '7. Run `node scripts/generate-readme.js` to update the README dashboard',
+                  '8. Create a PR with label `submission-proposal` containing all changes',
+                  '',
+                  '### Important',
+                  '- Match session topics to both the speaker profile AND the event themes',
+                  '- Respect any word/character limits from the CFP',
+                  '- Include concrete takeaways and audience value proposition',
+                  '- Adapt existing sessions from the speaker profile rather than inventing from scratch',
+                  '',
+                  '---',
+                  '*Auto-created when the event discovery PR was merged.*'
+                ].join('\n')
+              });
+
+              core.info(`Created submission issue #${issue.number} for ${eventName}`);
+            }
+
+  update-dashboard:
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'event-discovery')
+    needs: compose-submissions
+    uses: ./.github/workflows/update-dashboard.yml
+    with:
+      commit_message: "📊 Update dashboard: new event merged from PR #${{ github.event.pull_request.number }}"
