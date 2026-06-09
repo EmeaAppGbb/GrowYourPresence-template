@@ -7,11 +7,15 @@ steps:
     with:
       node-version: '20'
 
+  - name: Install dependencies
+    run: |
+      npm ci
+
   - name: Install Playwright
     run: |
       npx playwright install --with-deps chromium
 
-  - name: Install dependencies
+  - name: Install MCP servers
     run: |
       npm install -g @anthropic-ai/fetch-mcp-server || true
       npm install -g @playwright/mcp@latest || true

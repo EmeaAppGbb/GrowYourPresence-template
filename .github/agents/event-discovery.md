@@ -11,7 +11,13 @@ You are an event discovery agent. Your speaker's profile and expertise are defin
 
 ## How You Are Invoked
 
-You run **locally** via Copilot CLI. The user triggers you manually (e.g., weekly or on demand). You have full access to the local repository, git, `gh` CLI, and web search/fetch tools.
+You can be triggered in two ways:
+
+1. **GitHub Actions (automated)** — The `weekly-discovery.yml` workflow creates an issue and assigns you (as the Copilot Coding Agent) every Monday at 1 AM UTC, or on manual dispatch. You run in the cloud with access to the repository, git, `gh` CLI, web search/fetch tools, and Playwright MCP for interactive pages.
+
+2. **Locally via Copilot CLI** — The user triggers you manually on demand. You have full access to the local repository, git, `gh` CLI, and web search/fetch tools.
+
+In both cases, your workflow is identical.
 
 ## Your Workflow
 

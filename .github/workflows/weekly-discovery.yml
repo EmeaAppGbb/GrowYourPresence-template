@@ -1,0 +1,127 @@
+name: "🔍 Weekly Event Discovery"
+
+on:
+  schedule:
+    # Every Monday at 1:00 AM UTC
+    - cron: '0 1 * * 1'
+
+  # Manual trigger for on-demand discovery
+  workflow_dispatch:
+    inputs:
+      custom_instructions:
+        description: 'Additional instructions for the discovery agent (optional)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  issues: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  trigger-discovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create discovery issue for Copilot Coding Agent
+        id: create-issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().split('T')[0];
+            const customInstructions = '${{ github.event.inputs.custom_instructions }}' || '';
+
+            const body = [
+              '## 🔍 Weekly Event Discovery',
+              '',
+              `**Run Date:** ${today}`,
+              `**Triggered by:** ${context.eventName === 'schedule' ? 'Scheduled (weekly)' : 'Manual dispatch'}`,
+              '',
+              '### Instructions',
+              '',
+              'Execute the **Event Discovery Agent** workflow as defined in `.github/agents/event-discovery.md`.',
+              '',
+              '**Steps:**',
+              '1. Read `config/discovery-criteria.md` for search criteria and curated sources',
+              '2. Read `config/speaker-profile.md` for topic matching',
+              '3. Check existing `events/` files to avoid duplicates (match on `event_id` in frontmatter)',
+              '4. Search for new events using the tiered search strategy (Tier 1 → Tier 2 → Tier 3)',
+              '5. For each new event found:',
+              '   - Create a new branch from `main`: `discovery/{event_id}`',
+              '   - Create `events/{year}/{event_id}.md` using `events/_template.md`',
+              '   - Run `node scripts/generate-readme.js` to update the dashboard',
+              '   - Push and open a PR with title `🎤 New Event: {Name} ({Location}, {Date})` and label `event-discovery`',
+              '6. Return to `main` branch when done',
+              '',
+              '### Important Rules',
+              '- **One PR per event** — never combine multiple events in one PR',
+              '- **Never fabricate event details** — mark uncertain info with `verification_required: true`',
+              '- **Skip events with expired CFPs** — CFP deadline must be at least 7 days in the future',
+              '- **Skip duplicates** — check `events/` directory before creating new files',
+              '- **Include README update** in each PR via `node scripts/generate-readme.js`',
+              '',
+              customInstructions ? `### Additional Instructions\n\n${customInstructions}\n\n` : '',
+              '---',
+              '*Auto-created by the weekly discovery workflow.*'
+            ].filter(Boolean).join('\n');
+
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔍 Weekly Event Discovery — ${today}`,
+              labels: ['event-discovery', 'squad:copilot'],
+              body: body
+            });
+
+            core.setOutput('issue_number', issue.number);
+            core.info(`Created discovery issue #${issue.number}`);
+
+      - name: Assign Copilot Coding Agent
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = ${{ steps.create-issue.outputs.issue_number }};
+
+            const { data: repoData } = await github.rest.repos.get({ owner, repo });
+            const baseBranch = repoData.default_branch;
+
+            try {
+              await github.request('POST /repos/{owner}/{repo}/issues/{issue_number}/assignees', {
+                owner,
+                repo,
+                issue_number,
+                assignees: ['copilot-swe-agent[bot]'],
+                agent_assignment: {
+                  target_repo: `${owner}/${repo}`,
+                  base_branch: baseBranch,
+                  custom_instructions: [
+                    'You are the Event Discovery Agent. Follow the workflow in `.github/agents/event-discovery.md` exactly.',
+                    '',
+                    'Key points:',
+                    '- Use web_search and web_fetch (or Playwright MCP if available) to find events',
+                    '- Create ONE PR per discovered event (branch: discovery/{event_id})',
+                    '- Each PR must include the event file AND updated README via `node scripts/generate-readme.js`',
+                    '- Label each PR with `event-discovery`',
+                    '- Skip events with expired CFPs or that already exist in `events/` directory',
+                    '- Set `verification_required: true` for any uncertain details',
+                    '- Always return to main branch when done'
+                  ].join('\n')
+                },
+                headers: {
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+              });
+              core.info(`Assigned copilot-swe-agent to discovery issue #${issue_number}`);
+            } catch (err) {
+              core.warning(`Agent assignment failed: ${err.message}`);
+              // Fallback: just add a comment with instructions
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `⚠️ Could not auto-assign Copilot Coding Agent. Please assign manually or run the Event Discovery Agent locally via Copilot CLI.\n\nError: ${err.message}`
+              });
+            }

@@ -11,7 +11,13 @@ You are a submission composer agent. Your speaker's profile, bio, and expertise 
 
 ## How You Are Invoked
 
-You run **locally** via Copilot CLI. The user triggers you manually for a specific event. You may be given:
+You can be triggered in two ways:
+
+1. **GitHub Actions (automated)** — When a discovery PR is merged, the `on-event-pr-merge.yml` workflow creates an issue and assigns you (as the Copilot Coding Agent) automatically. You run in the cloud with access to the repository, git, `gh` CLI, web search/fetch tools, and **Playwright MCP** for navigating CFP pages.
+
+2. **Locally via Copilot CLI** — The user triggers you manually for a specific event. You have access to the local repository, git, `gh` CLI, and Playwright MCP.
+
+In both cases, you may be given:
 - An event file path directly (e.g., "compose submissions for `events/2026/kubecon-na-2026.md`")
 - An issue number (check the issue body for the event file path)
 - Just an event name (search `events/` directory to find the matching file)
